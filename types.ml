@@ -1,98 +1,4 @@
-type pterm = Var of string
-  | App of pterm * pterm
-  | Abs of string * pterm
-;;
-
-
-(* print des termes  *)
-let rec print_term (t : pterm) : string = 
-  match t with 
-  | Var x -> x 
-  | App (a, b) -> "("^ (print_term a)  ^" "^ (print_term b) ^")"
-  | Abs (var, pterm) -> "(fun " ^ var ^" -> " ^(print_term pterm) ^")"
-;;
-
-let compteur_var : int ref = ref 0;;
-
-let nouvelle_var () : string = compteur_var := !compteur_var + 1;
-  "X"^(string_of_int !compteur_var);;
-
-
-
-let rec substitution (x : string) (arg : pterm) (replace_in : pterm) : pterm = 
-  match replace_in with
-  | Var y -> if x = y then arg else replace_in 
-  | App (a,b) -> App ((substitution x arg a ) , (substitution x arg b )) 
-  | Abs (var, body) -> 
-    if var = x then Abs(var, body) 
-    else Abs(var, substitution x arg body) 
-;;
-
-let rec alphaconv (t : pterm) : pterm = match t with
-  | Var x -> Var x
-  | App (a,b) ->  App(alphaconv a, alphaconv b)
-  | Abs (var, pterm) ->
-    let new_var = nouvelle_var() in
-    Abs (new_var, substitution var (Var new_var) (alphaconv pterm))
-  ;;
-
-let rec ltr_ctb_step (t : pterm) : pterm option =
-  match t with
-  | App (Abs (x, t1), n) -> 
-    (match ltr_ctb_step n with
-      | Some n' -> Some (substitution x n' t1)
-      | None -> Some (substitution x n t1))
-  | App (m, n) ->
-    (match ltr_ctb_step m with
-      | Some m' -> Some (App (m', n))
-      | None -> 
-        (match ltr_ctb_step n with
-          | Some n' -> Some (App (m, n'))
-          | None -> None))
-  | _ -> None
-;;
-
-let rec ltr_cbv_norm (t : pterm) : pterm =
-  match ltr_ctb_step t with
-  | Some res -> ltr_cbv_norm res  
-  | None -> t 
-;;
-
-let rec ltr_cbv_norm_with_limit (t : pterm) (limit : int) : pterm option =
-  if limit = 0 then None
-  else
-    match ltr_ctb_step t with
-    | Some res -> ltr_cbv_norm_with_limit res (limit - 1)
-    | None -> Some t
-;;
-
-
-(* Examples *)
-let identity = Abs("x", Var("x"));;
-let s = Abs("x",Abs("y",Abs("z",App(App(Var ("x"),Var("z")),App(Var("y"),Var("z")))))) ;;
-let k = Abs("x",Abs("y",Var("x")));;
-let omega = App(Abs("x", App(Var "x", Var "x")), Abs("x", App(Var "x", Var "x")))
-let delta = Abs("x", App(Var "x", Var "x"))
-
-let skk = App (s,App(k,k));;
-let sii = App(s,App(identity,identity))
-
-let one = Abs("f",Abs("x",App(Var("f"),Var("x"))));;
-let two = Abs("f",Abs("x",App(Var("f"),App(Var("f"),Var("x")))));;
-let succ = Abs("n", Abs("f", Abs("x", App(Var "f", App(App(Var "n", Var "f"), Var "x")))))
-let add = Abs("m", Abs("n", Abs("f", Abs("x", App(App(Var "m", Var "f"), App(App(Var "n", Var "f"), Var "x"))))))
-
-let term_add = App(App(add, one), two);;
-let result_add = ltr_cbv_norm term_add;;
-
-let test () =
-  let term_add = App(App(add, one), one) in
-  let result_add = ltr_cbv_norm term_add in
-  print_term result_add;;
-
-
-
-(* Partie 3  *)
+open Ast
 
 (* Types simples*)
 type ptype = TVar of string
@@ -110,8 +16,7 @@ let rec print_type (t : ptype) : string =
 
 
 let compteur_var_t : int ref = ref 0
-
-let nouvelle_var_t () : string = compteur_var := ! compteur_var + 1;"T"^( string_of_int ! compteur_var );;
+let nouvelle_var_t () : string = compteur_var_t := ! compteur_var_t + 1;"T"^( string_of_int ! compteur_var_t );;
 
 type equa = (ptype * ptype) list
 
@@ -229,35 +134,3 @@ let inferer_type (term : pterm) (env : env) (limit : int) : ptype option =
     let final_type = appliquer_substitution eqs t in
     Some final_type
 ;;
-
-
-
-let test_typage_variable () =
-  let env = [("x", TVar "T1")] in
-  let term = Var "x" in
-  match inferer_type term env 100 with
-  | Some t -> print_endline ("Type de Var 'x': " ^ print_type t)
-  | None -> print_endline "Erreur de typage variable"
-;;
-
-let test_typage_abstraction_simple () =
-  let env = [] in
-  let term = Abs("x", Var "x") in
-  match inferer_type term env 100 with
-  | Some t -> print_endline ("Type inféré pour Abs 'x': " ^ print_type t)
-  | None -> print_endline "Erreur de typage pour Abs 'x'"
-;;
-
-let test_typage_application_simple () =
-  let env = [("f", Arr(TVar "T1", TVar "T2")); ("x", TVar "T1")] in
-  let term = App(Var "f", Var "x") in
-  match inferer_type term env 100 with
-  | Some t -> print_endline ("Type inféré pour App 'f x': " ^ print_type t)
-  | None -> print_endline "Erreur de typage pour App 'f x'"
-;;
-
-
-let () = 
-test_typage_variable();
-test_typage_abstraction_simple();
-test_typage_application_simple ()
