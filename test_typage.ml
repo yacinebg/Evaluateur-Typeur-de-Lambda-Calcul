@@ -115,6 +115,17 @@ let test_typage_forall () =
   | None -> print_endline "Erreur de typage pour la fonction identité polymorphe"
 ;;
 
+let test_typage_ifzero_polymorphe () =
+  let env = [] in
+  (* Fonction identité polymorphe utilisant un branchement *)
+  let term = Let ("id",
+                  Abs ("x", IfZero (Var "x", Int 0, Var "x")),
+                  App (Var "id", Var "y")) in
+  let env_with_y = [("y", TVar "T")] in
+  match inferer_type term env_with_y 100 with
+  | Some t -> print_endline ("Type inféré pour IfZero polymorphe : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour IfZero polymorphe"
+;;
 
 
 let () = 
@@ -128,4 +139,5 @@ test_typage_variable ();
   test_typage_let_polymorphisme ();
   test_typage_pfix ();
   test_typage_liste_vide ();
-  test_typage_forall()
+  test_typage_forall();
+  test_typage_ifzero_polymorphe();
