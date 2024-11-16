@@ -98,16 +98,16 @@ let rec genere_equa (te : pterm) (ty : ptype) (e : env) : equa =
     let eq_t2 = genere_equa t2 ty e in
     eq_cond @ eq_t1 @ eq_t2
   
-    | Let(x, e1, e2) ->
+    | Let (x, e1, e2) ->
       (* Étape 1 : Inférer le type de `e1` *)
-      let t0 = TVar(nouvelle_var_t()) in
+      let t0 = TVar (nouvelle_var_t()) in
       let inferred_type = inferer_type e1 e 100 in
       let t0' = match inferred_type with
         | Some ty -> ty
         | None -> failwith "Erreur lors de l'inférence du type de e1"
       in
   
-      (* Étape 2 : Généraliser le type de `e1` *)
+      (* Étape 2 : Généraliser le type de `e1` avant de l'ajouter à l'environnement *)
       let t0_gen = generaliser t0' e in
   
       (* Étape 3 : Ajouter `x` avec son type généralisé à l'environnement *)
@@ -115,6 +115,7 @@ let rec genere_equa (te : pterm) (ty : ptype) (e : env) : equa =
   
       (* Étape 4 : Générer les équations pour `e2` *)
       genere_equa e2 ty env'
+  
   
 
   

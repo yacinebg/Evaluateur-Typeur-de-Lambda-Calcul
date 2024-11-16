@@ -107,6 +107,14 @@ let test_generaliser () =
   print_endline ("Type après généralisation : " ^ print_type ty_gen)
 ;;
 
+let test_typage_forall () =
+  let env = [] in
+  let term = Let ("id", Abs ("x", Var "x"), Var "id") in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour la fonction identité polymorphe : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour la fonction identité polymorphe"
+;;
+
 
 
 let () = 
@@ -120,3 +128,4 @@ test_typage_variable ();
   test_typage_let_polymorphisme ();
   test_typage_pfix ();
   test_typage_liste_vide ();
+  test_typage_forall()
