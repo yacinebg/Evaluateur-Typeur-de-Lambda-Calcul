@@ -7,6 +7,8 @@ type ptype =
   | N
   | TList of ptype   
   | Forall of string list * ptype 
+  | TUnit
+  | TRef of ptype
 ;;
 
 
@@ -20,6 +22,8 @@ let rec print_type (t : ptype) : string =
   | Forall (vars, t) ->
     let vars_str = String.concat ", " vars in
     "∀" ^ vars_str ^ ". " ^ (print_type t)
+  | TRef t -> "ref ("^ (print_type t) ^")"
+  | TUnit  -> "unit "
 ;;
 
 
@@ -38,29 +42,63 @@ let rec cherche_type (v : string) (e : env) : ptype =
 ;; 
 
 
+let rec est_non_expansif (t : pterm) : bool =
+  match t with
+  | Var _ -> true
+  | Int _ -> true
+  | Unit -> true
+  | Abs _ -> true
+  | List Vide -> true
+  | Add (t1, t2) | Sub (t1, t2) | Mul (t1, t2) -> 
+      est_non_expansif t1 && est_non_expansif t2
+  | IfZero (t1, t2, t3) | IfEmpty (t1, t2, t3) -> 
+      est_non_expansif t1 && est_non_expansif t2 && est_non_expansif t3
+  | Cons (t1, t2) ->
+      est_non_expansif t1 && est_non_expansif t2
+  | List lst -> 
+    let rec est_non_expansif_liste l =
+      match l with
+      | Vide -> true
+      | Cons (hd, tl) -> est_non_expansif hd && est_non_expansif_liste tl
+    in
+    est_non_expansif_liste lst
+  | Let (_, e1, _) -> 
+      est_non_expansif e1
+  (* Cas expansive *)
+  | App _ -> false
+  | Ref _ -> false
+  | Deref _ -> false
+  | Assign _ -> false
+  | Pfix _ -> false
+  | Head _ -> false
+  | Tail _ -> false
+
 
 (* Récupérer les variables libres qui ne sont pas dans l'environnement *)
-let rec generaliser (t : ptype) (env : env) : ptype =
-  (* Fonction pour collecter les variables de type dans un type *)
-  let rec collect_vars ty acc =
-    match ty with
-    | TVar x -> if List.mem x acc then acc else x :: acc
-    | Arr (t1, t2) -> collect_vars t1 (collect_vars t2 acc)
-    | TList t -> collect_vars t acc
-    | N _ -> acc
-    | Forall (vars, t) -> 
-        let acc_filtered = List.filter (fun x -> not (List.mem x vars)) acc in
-        collect_vars t acc_filtered
-    | _ -> acc
-  in
-  (* Récupérer les variables de type présentes dans l'environnement *)
-  let vars_env = List.fold_left (fun acc (_, ty) -> collect_vars ty acc) [] env in
-  (* Collecter les variables libres dans le type `t` *)
-  let vars_libres = collect_vars t [] in
-  (* Exclure les variables de l'environnement des variables libres *)
-  let vars_a_generaliser = List.filter (fun x -> not (List.mem x vars_env)) vars_libres in
-  if vars_a_generaliser = [] then t
-  else Forall (vars_a_generaliser, t)
+let rec generaliser (t : ptype) (env : env) (term : pterm) : ptype =
+    let rec collect_vars ty acc =
+      match ty with
+      | TVar x -> if List.mem x acc then acc else x :: acc
+      | Arr (t1, t2) -> collect_vars t1 (collect_vars t2 acc)
+      | TList t -> collect_vars t acc
+      | TRef t -> collect_vars t acc
+      | Forall (vars, t) ->
+          let acc_filtered = List.filter (fun x -> not (List.mem x vars)) acc in
+          collect_vars t acc_filtered
+      | N | TUnit -> acc
+    in
+    let vars_env = List.fold_left (fun acc (_, ty) -> collect_vars ty acc) [] env in
+    let vars_libres = collect_vars t [] in
+    let vars_a_generaliser = List.filter (fun x -> not (List.mem x vars_env)) vars_libres in
+    if vars_a_generaliser = [] then t
+    else Forall (vars_a_generaliser, t)
+;;
+
+let rec generaliser_faible (ty : ptype) (env : env) (term : pterm) : ptype =
+  if est_non_expansif term then
+    generaliser ty env term
+  else
+    ty
 ;;
 
 
@@ -100,29 +138,18 @@ let rec genere_equa (te : pterm) (ty : ptype) (e : env) : equa =
     let eq_t2 = genere_equa t2 ty e in
     eq_cond @ eq_t1 @ eq_t2
   
-    | Let (x, e1, e2) ->
-      (* Étape 1 : Inférer le type de `e1` *)
-      let t0 = TVar (nouvelle_var_t()) in
-      let inferred_type = inferer_type e1 e 100 in
-      let t0' = match inferred_type with
-        | Some ty -> ty
-        | None -> failwith "Erreur lors de l'inférence du type de e1"
-      in
-  
-      (* Étape 2 : Généraliser le type de `e1` avant de l'ajouter à l'environnement *)
-      let t0_gen = generaliser t0' e in
-  
-      (* Étape 3 : Ajouter `x` avec son type généralisé à l'environnement *)
-      let env' = (x, t0_gen) :: e in
-  
-      (* Étape 4 : Générer les équations pour `e2` *)
-      genere_equa e2 ty env'
-  
-  
-
+  | Let (x, e1, e2) ->
+    let t0 = TVar (nouvelle_var_t()) in
+    let inferred_type = inferer_type e1 e 100 in
+    let t0' = match inferred_type with
+      | Some ty -> ty
+      | None -> failwith "Erreur lors de l'inférence du type de e1"
+    in
+    let t0_gen = generaliser_faible t0' e e1 in
+    let env' = (x, t0_gen) :: e in
+    genere_equa e2 ty env'
   
   | Pfix t ->
-    (* Vérifier que `t` est une abstraction *)
     (match t with
       | Abs (x, t_body) ->
           let type_T = TVar (nouvelle_var_t ()) in
@@ -159,6 +186,24 @@ let rec genere_equa (te : pterm) (ty : ptype) (e : env) : equa =
           let eq_tail = genere_equa (List tl) (TList ta) e in
           (ty, TList ta) :: eq_head @ eq_tail)
 
+  | Ref t ->
+    let ta = TVar (nouvelle_var_t()) in
+    let eq_t = genere_equa t ta e in
+    (ty, TRef ta) :: eq_t
+      
+  | Deref t ->
+    let ta = TVar (nouvelle_var_t()) in
+    let eq_t = genere_equa t (TRef ta) e in
+    (ty, ta) :: eq_t
+  
+  | Assign (t1, t2) ->
+    let ta = TVar (nouvelle_var_t()) in
+    let eq1 = genere_equa t1 (TRef ta) e in
+    let eq2 = genere_equa t2 ta e in
+    (ty, TUnit) :: eq1 @ eq2
+  
+  | Unit -> [(ty,TUnit)]
+
 (* fonction qui verifie si une variable est dans un type *)
 and occur_check (v:string) (ty:ptype) : bool = 
   match ty with
@@ -181,6 +226,9 @@ and substitue (v:string) (replace_with : ptype) (t:ptype) : ptype=
   | Forall (vars, t') ->
       if List.mem v vars then t
       else Forall (vars, substitue v replace_with t')
+  | TRef t' -> TRef (substitue v replace_with t')
+  | TUnit -> TUnit
+
   | _ -> failwith "dz"
 
 and substitute_in_equations (v : string) (replacement : ptype) (equations : equa) : equa =
@@ -199,7 +247,7 @@ and barendregtisation (vars : string list) (t : ptype) : ptype =
 (* fonction qui implémente l'algorithme d'unification des fonctions *)
 and unification (equations : equa) (subs : equa) : equa =
   match equations with
-  | [] -> subs  (* On retourne toutes les substitutions accumulées *)
+  | [] -> subs
   | (t1, t2) :: rest -> 
       if t1 = t2 then unification rest subs
       else 
@@ -231,6 +279,12 @@ and unification (equations : equa) (subs : equa) : equa =
         | TList t1', TList t2' -> 
           unification ((t1', t2') :: rest) subs
         
+        | TRef t1', TRef t2' ->
+          unification ((t1', t2') :: rest) subs
+        
+        | TUnit, TUnit -> 
+          unification rest subs
+
         | _ -> failwith "échec (types incompatibles)"
 
 
@@ -238,15 +292,13 @@ and appliquer_substitution (equations : equa) (t : ptype) : ptype =
   match t with
   | TVar v -> (
       try
-        (* Trouver la substitution pour `TVar v` *)
         let t' = List.assoc (TVar v) equations in
-        appliquer_substitution equations t'  (* Suivre récursivement la substitution *)
+        appliquer_substitution equations t'
       with Not_found -> TVar v
     )
   | Arr (t1, t2) -> Arr (appliquer_substitution equations t1, appliquer_substitution equations t2)
   | TList t' -> TList (appliquer_substitution equations t')
   | Forall (vars, t') ->
-      (* Appliquer les substitutions uniquement aux parties non généralisées *)
       let filtered_equations = List.filter (fun (TVar x, _) -> not (List.mem x vars)) equations in
       Forall (vars, appliquer_substitution filtered_equations t')
   | _ -> t
@@ -257,10 +309,12 @@ and resoudre_equations equations limit =
   try Some (unification equations [])
   with _ -> None
 
+(* cette fonction est utile pour rendre le bon type durant le typage, 
+ex: apres la resolution des equation T1 = N, le type retourné etait T1 or nous on veut N 
+ *)
 and trouver_variable_originale (equations : equa) (t : ptype) : ptype =
   match t with
   | TVar _ ->
-      (* Rechercher une clé dans les équations dont la valeur est équivalente à `t` *)
       (try
           List.find (fun (_, t2) -> t2 = t) equations |> fst
         with Not_found -> t)
@@ -281,7 +335,6 @@ and inferer_type (term : pterm) (env : env) (limit : int) : ptype option =
     let fully_resolved_type = appliquer_substitution eqs resolved_type in
     let variable_originale = trouver_variable_originale eqs fully_resolved_type in
     Some variable_originale
-
 
 
 and  print_substitutions (equations : equa) =

@@ -34,7 +34,6 @@ let test_typage_application_simple () =
 ;;
 
 
-(* Test pour le typage des listes *)
 let test_typage_cons () =
   let env = [] in
   let term = Cons (Int 1, List (Cons (Int 2, Vide))) in
@@ -59,7 +58,6 @@ let test_typage_tail () =
   | None -> print_endline "Erreur de typage pour Tail"
 ;;
 
-(* Test pour le typage du let-polymorphisme *)
 let test_typage_let_simple () =
   let env = [] in
   let term = Let ("id", Abs ("x", Var "x"), App (Var "id", Int 5)) in
@@ -68,7 +66,6 @@ let test_typage_let_simple () =
   | None -> print_endline "Erreur de typage pour Let simple"
 ;;
 
-(* Test pour le typage d'une expression Let avec polymorphisme *)
 let test_typage_let_polymorphisme () =
   let term = Let ("id", Abs ("x", Var "x"), App (Var "id", Var "y")) in
   let env = [("y", TVar "B")] in
@@ -78,7 +75,6 @@ let test_typage_let_polymorphisme () =
 ;;
 
 
-(* Test pour le typage du point fixe (Pfix) *)
 let test_typage_pfix () =
   let env = [] in
   let term = Pfix (Abs ("f", Abs ("x", IfZero (Var "x", Int 1, Mul (Var "x", App (Var "f", Sub (Var "x", Int 1))))))) in
@@ -87,7 +83,6 @@ let test_typage_pfix () =
   | None -> print_endline "Erreur de typage pour Pfix"
 ;;
 
-(* Test pour le typage d'une liste vide *)
 let test_typage_liste_vide () =
   let env = [] in
   let term = List Vide in
@@ -96,15 +91,6 @@ let test_typage_liste_vide () =
   | None -> print_endline "Erreur de typage pour une liste vide"
 ;;
 
-(* Test pour le typage d'une fonction généralisée *)
-
-let test_generaliser () =
-  let env1 = [("x", TVar "A")] in
-  let ty1 = Arr (TVar "A", TVar "B") in
-  let ty_gen = generaliser ty1 env1 in
-  print_endline ("Type avant généralisation : " ^ print_type ty1);
-  print_endline ("Type après généralisation : " ^ print_type ty_gen)
-;;
 
 let test_typage_forall () =
   let env = [] in
@@ -130,6 +116,59 @@ let test_typage_ifzero_expression () =
   | None -> print_endline "Erreur de typage pour IfZero avec expressions"
 ;;
 
+let test_typage_unit () =
+  let env = [] in
+  let term = Unit in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour Unit : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour Unit"
+;;
+
+let test_typage_ref () =
+  let env = [] in
+  let term = Ref (Int 42) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour Ref 42 : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour Ref 42"
+;;
+
+let test_typage_deref () =
+  let env = [] in
+  let term = Deref (Ref (Int 42)) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour Deref (Ref 42) : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour Deref (Ref 42)"
+;;
+
+let test_typage_assign () =
+  let env = [] in
+  let term = Assign (Ref (Int 10), Int 20) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour Assign (Ref 10, 20) : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour Assign (Ref 10, 20)"
+;;
+
+let test_typage_chaine_de_references () =
+  let env = [] in
+  let term = Deref (Deref (Ref (Ref (Int 5)))) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour chaîne de références : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour chaîne de références"
+;;
+
+let test_typage_polymorphisme_faible () =
+  let env = [] in
+  let term = 
+    Let ("l", Ref (List Vide), 
+      Let ("t", Assign (Var "l", List (Cons (Abs ("x", Var "x"), Vide))), 
+        Add (Head (Deref (Var "l")), Int 2)))
+  in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Erreur : le test de polymorphisme faible a réussi, type inféré : " ^ print_type t)
+  | None -> print_endline "Test réussi : le typage a correctement rejeté le terme expansif"
+;;
+
+
 let () = 
 test_typage_variable ();
   test_typage_abstraction_simple ();
@@ -143,4 +182,10 @@ test_typage_variable ();
   test_typage_liste_vide ();
   test_typage_forall();
   test_typage_ifzero_simple();
-  test_typage_ifzero_expression()
+  test_typage_ifzero_expression();
+  test_typage_unit ();
+  test_typage_ref ();
+  test_typage_deref ();
+  test_typage_assign ();
+  test_typage_chaine_de_references ();
+  test_typage_polymorphisme_faible()

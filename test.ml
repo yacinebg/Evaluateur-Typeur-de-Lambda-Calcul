@@ -17,7 +17,7 @@ let add = Abs("m", Abs("n", Abs("f", Abs("x", App(App(Var "m", Var "f"), App(App
 
 let term_add = App(App(add, one), two)
 
-(* Initialisation de la mémoire *)
+(* initialisation de la memoire *)
 let initial_memory = []
 
 let result_add, _ = ltr_cbv_norm term_add initial_memory;;
@@ -27,7 +27,7 @@ let test =
   let result_add, _ = ltr_cbv_norm term_add initial_memory in
   print_term result_add;;
 
-(* Tests pour la partie 5 *)
+(* tests pour la partie 5 *)
 let resultats_tests = [
   ("Addition : 2+2", Add(Int(2), Int(2)), Int(4));
   ("Mult : 6*2", Mul(Int(6), Int(2)), Int(12));
@@ -64,9 +64,8 @@ let tests_factorial = [
   ("Factorielle de 5", App (factorial, Int 5), Int 120);
 ]
 
-(* Tests pour Ref, Deref et Assign *)
 let tests_memory = [
-  ("Création de référence", Ref (Int 42), Address 1);
+  ("Création de référence", Ref (Int 42), Int 1);
 
   ("Déréférencement de référence",
    Let ("x", Ref (Int 10), Deref (Var "x")),
@@ -88,7 +87,7 @@ let tests_memory = [
    Int 5);
 ]
 
-(* Fonction pour afficher les résultats des tests *)
+(* fonction pour afficher les résultats des tests *)
 let afficher_tests tests =
   List.iter (fun (description, term, expected) ->
     let result, _ = ltr_cbv_norm term initial_memory in
@@ -98,7 +97,6 @@ let afficher_tests tests =
       Printf.printf "%s : %s = %s, attendu %s (Test échoué)\n" description (print_term term) (print_term result) (print_term expected)
   ) tests
 
-(* Exécution des tests *)
 let () =
   afficher_tests resultats_tests;
   afficher_tests examples_list;

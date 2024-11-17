@@ -1,5 +1,6 @@
-type 'a liste = Vide | Cons of 'a * 'a liste
-type pterm = Var of string
+type 'a liste = Vide | Cons of 'a * 'a liste   (* merci à yanis pour son aide ici, au début j'avais utilisé les listes en Ocaml mais ça m'a bloqué à un moment*)
+
+and pterm = Var of string
   | App of pterm * pterm
   | Abs of string * pterm
   
@@ -21,9 +22,7 @@ type pterm = Var of string
   | Ref of pterm               (* ref e *)
   | Deref of pterm             (* !e *)
   | Assign of pterm * pterm    (*e1 := e2 *)
-  | Address of int 
   | Unit          
-;;
 
 type memory = (int * pterm) list
 let mem_counter = ref 0
@@ -31,36 +30,22 @@ let new_mem () : int =
   mem_counter := !mem_counter + 1;
   !mem_counter
 
-(* Chercher une valeur dans la mémoire à partir de son adresse *)
-let rec chercher_mem (addr : int) (mem : memory) : pterm option =
-  match mem with
-  | [] -> None
-  | (a, v) :: rest -> if a = addr then Some v else chercher_mem addr rest
 
-(* Mettre à jour la mémoire à une adresse donnée *)
-let rec maj_mem (addr : int) (value : pterm) (mem : memory) : memory =
-  match mem with
-  | [] -> [(addr, value)]
-  | (a, v) :: rest ->
-      if a = addr then (addr, value) :: rest
-      else (a, v) :: maj_mem addr value rest
-
-(* print des termes  *)
+(* print des termes , pretty printer*)
 let rec print_term (t : pterm) : string = 
   match t with 
   | Var x -> x
   | App (a, b) -> "(" ^ (print_term a) ^ " " ^ (print_term b) ^ ")"
   | Abs (var, pterm) -> "(fun " ^ var ^ " -> " ^ (print_term pterm) ^ ")"
-  | Int n -> string_of_int n  (* Assurez-vous que ce cas gère Int correctement *)
+  | Int n -> string_of_int n
   | Add (a, b) -> "(" ^ (print_term a) ^ " + " ^ (print_term b) ^ ")"
   | Sub (a, b) -> "(" ^ (print_term a) ^ " - " ^ (print_term b) ^ ")"
   | Mul (a, b) -> "(" ^ (print_term a) ^ " * " ^ (print_term b) ^ ")"
   | IfZero (cond, t1, t2) -> "if zero " ^ (print_term cond) ^ " then " ^ (print_term t1) ^ " else " ^ (print_term t2)
   | Cons (head, tail) -> "(" ^ (print_term head) ^ " :: " ^ (print_term tail) ^ ")"
-  | Head lst -> (print_term lst)  (* Vérifiez bien ce cas si l'évaluation est complète *)
+  | Head lst -> (print_term lst)
   | Tail lst -> (print_term lst)
-  | IfEmpty (cond, t1, t2) -> 
-      "if empty " ^ (print_term cond) ^ " then " ^ (print_term t1) ^ " else " ^ (print_term t2)
+  | IfEmpty (cond, t1, t2) -> "if empty " ^ (print_term cond) ^ " then " ^ (print_term t1) ^ " else " ^ (print_term t2)
   | Pfix t -> "fix " ^ (print_term t)
   | Let (x, e1, e2) -> "let " ^ x ^ " = " ^ (print_term e1) ^ " in " ^ (print_term e2)
   | List elements -> 
@@ -74,16 +59,12 @@ let rec print_term (t : pterm) : string =
   | Deref e -> "!(" ^ print_term e ^ ")"
   | Assign (e1, e2) -> print_term e1 ^ " := " ^ print_term e2
   | Unit -> "()"
-  | Address n -> "address " ^ (string_of_int n)
 ;;
 
 
 let compteur_var : int ref = ref 0;;
-
 let nouvelle_var () : string = compteur_var := !compteur_var + 1;
   "X"^(string_of_int !compteur_var);;
-
-
 
   
 let rec substitution (x : string) (arg : pterm) (replace_in : pterm) : pterm = 
@@ -128,12 +109,14 @@ let rec substitute_in_list (lst : 'a liste) (x : string) (arg : pterm) : 'a list
       Cons (substitution x arg head, substitute_in_list tail x arg)
   ;;
 
+  (* fonction pour renommer *)
 let rec alphaconv (t : pterm) : pterm = match t with
   | Var x -> Var x
   | App (a,b) ->  App(alphaconv a, alphaconv b)
   | Abs (var, pterm) ->
     let new_var = nouvelle_var() in
     Abs (new_var, substitution var (Var new_var) (alphaconv pterm))
+  (* partie 4 *)
   | Let (var, e1, e2) -> 
     let new_var = nouvelle_var() in
     Let (new_var, alphaconv e1, substitution var (Var new_var) (alphaconv e2))
@@ -167,9 +150,10 @@ let rec alphaconv (t : pterm) : pterm = match t with
   aux lst
 ;; 
 
+(* fonction pour determiner si c'est une valeur, nécéssaire pour les extensions de la partie 5 *)
 let rec is_value t =
   match t with
-  | Int _ | Unit | Abs _ | Address _ -> true
+  | Int _ | Unit | Abs _-> true
   | List l -> is_value_list l
   | _ -> false
 
@@ -178,10 +162,9 @@ and is_value_list l =
   | Vide -> true
   | Cons (head, tail) -> is_value head && is_value_list tail
 
-
+(* fonction d'évaluation des lambda calcul, selon les directives du projet et de ce qu'on a vu en cours*)
 let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
   match t with
-  (* Réduction des applications *)
   | App (Abs (x, t1), n) ->
     (match ltr_ctb_step n mem with
      | Some (n', mem') -> Some (substitution x n' t1, mem')
@@ -194,16 +177,13 @@ let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
         | Some (n', mem') -> Some (App (m, n'), mem')
         | None -> None))
 
-  (* Réduction du Let *)
   | Let (var, e1, e2) ->
     (match ltr_ctb_step e1 mem with
-     | Some (v, mem') when is_value v ->
-       let subbed_e2 = substitution var v e2 in
-       Some (subbed_e2, mem')
+     | Some (v, mem') when is_value v -> Some (substitution var v e2, mem')
      | Some (e1', mem') -> Some (Let (var, e1', e2), mem')
-     | None -> None)
+     | None -> Some (substitution var e1 e2, mem))
+  
 
-  (* Réduction des opérations arithmétiques *)
   | Add (Int x, Int y) -> Some (Int (x + y), mem)
   | Add (t1, t2) ->
     (match ltr_ctb_step t1 mem with
@@ -231,22 +211,20 @@ let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
         | Some (t2', mem') -> Some (Mul (t1, t2'), mem')
         | None -> None))
 
-  (* Réduction des opérations sur les listes *)
   | Head (List (Cons (x, _))) -> Some (x, mem)
-  | Head (List Vide) -> failwith "Head of empty list"
+  | Head (List Vide) -> failwith "La liste est vide"
   | Head lst ->
     (match ltr_ctb_step lst mem with
      | Some (List (Cons (x, _)), mem') -> Some (x, mem')
      | _ -> None)
 
   | Tail (List (Cons (_, xs))) -> Some (List xs, mem)
-  | Tail (List Vide) -> failwith "Tail of empty list"
+  | Tail (List Vide) -> failwith "La liste est vide"
   | Tail lst ->
     (match ltr_ctb_step lst mem with
      | Some (List (Cons (_, xs)), mem') -> Some (List xs, mem')
      | _ -> None)
 
-  (* Réduction des expressions conditionnelles *)
   | IfZero (Int 0, t1, _) -> Some (t1, mem)
   | IfZero (Int _, _, t2) -> Some (t2, mem)
   | IfZero (cond, t1, t2) ->
@@ -263,7 +241,6 @@ let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
      | Some (List (Cons _), mem') -> Some (t2, mem')
      | _ -> None)
 
-  (* Réduction de Pfix *)
   | Pfix t ->
     (match t with
      | Abs (f, body) ->
@@ -273,15 +250,15 @@ let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
 
   | Ref v when is_value v ->
     let addr = new_mem () in
-    Some (Address addr, (addr, v) :: mem)
+    Some (Int addr, (addr, v) :: mem)
   | Ref t ->
       (match ltr_ctb_step t mem with
        | Some (v, mem') when is_value v -> 
            let addr = new_mem () in
-           Some (Address addr, (addr, v) :: mem')
+           Some (Int addr, (addr, v) :: mem')
        | Some (t', mem') -> Some (Ref t', mem')
        | None -> None)
-  | Assign (Address a, v) when is_value v ->
+  | Assign (Int a, v) when is_value v ->
       Some (Unit, (a, v) :: List.remove_assoc a mem)
   | Assign (t1, t2) ->
       (match ltr_ctb_step t1 mem with
@@ -291,17 +268,15 @@ let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
             | Some (t2', mem') -> Some (Assign (t1, t2'), mem')
             | None -> None)
        | None -> None)
-  | Deref (Address a) -> 
+  | Deref (Int a) -> 
       (try Some (List.assoc a mem, mem)
-       with Not_found -> failwith ("Invalid address: " ^ string_of_int a))
+       with Not_found -> failwith ("Mauvaise adresse : " ^ string_of_int a))
   | Deref t ->
       (match ltr_ctb_step t mem with
        | Some (t', mem') -> Some (Deref t', mem')
        | None -> None)
-     
   |_ -> None
 ;;
-
 
 let rec ltr_cbv_norm (t : pterm) (mem : memory) : (pterm * memory) =
   match ltr_ctb_step t mem with
@@ -309,6 +284,7 @@ let rec ltr_cbv_norm (t : pterm) (mem : memory) : (pterm * memory) =
   | None -> (t, mem)
 ;;
 
+(* avec une limite, j'utilise juste un compteur que je décremente *)
 let rec ltr_cbv_norm_with_limit (t : pterm) (mem : memory) (limit : int) : (pterm * memory) option =
   if limit = 0 then None
   else
