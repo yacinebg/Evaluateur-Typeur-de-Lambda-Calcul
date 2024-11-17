@@ -2,6 +2,8 @@ type 'a liste = Vide | Cons of 'a * 'a liste
 type pterm = Var of string
   | App of pterm * pterm
   | Abs of string * pterm
+  
+  (* partie 4 *)
   | Let of string * pterm * pterm
   | Pfix of pterm
   | IfZero of pterm * pterm * pterm
@@ -14,9 +16,35 @@ type pterm = Var of string
   | Head of pterm
   | Tail of pterm
   | Cons of pterm * pterm 
+  
+  (* partie 5 *)
+  | Ref of pterm               (* ref e *)
+  | Deref of pterm             (* !e *)
+  | Assign of pterm * pterm    (*e1 := e2 *)
+  | Address of int 
+  | Unit          
 ;;
 
-   
+type memory = (int * pterm) list
+let mem_counter = ref 0
+let new_mem () : int = 
+  mem_counter := !mem_counter + 1;
+  !mem_counter
+
+(* Chercher une valeur dans la mémoire à partir de son adresse *)
+let rec chercher_mem (addr : int) (mem : memory) : pterm option =
+  match mem with
+  | [] -> None
+  | (a, v) :: rest -> if a = addr then Some v else chercher_mem addr rest
+
+(* Mettre à jour la mémoire à une adresse donnée *)
+let rec maj_mem (addr : int) (value : pterm) (mem : memory) : memory =
+  match mem with
+  | [] -> [(addr, value)]
+  | (a, v) :: rest ->
+      if a = addr then (addr, value) :: rest
+      else (a, v) :: maj_mem addr value rest
+
 (* print des termes  *)
 let rec print_term (t : pterm) : string = 
   match t with 
@@ -42,6 +70,11 @@ let rec print_term (t : pterm) : string =
       | Cons (head, Vide) -> print_term head
       | Cons (head, tail) -> print_term head ^ "; " ^ aux tail
     in "[" ^ aux elements ^ "]"
+  | Ref e -> "ref(" ^ print_term e ^ ")"
+  | Deref e -> "!(" ^ print_term e ^ ")"
+  | Assign (e1, e2) -> print_term e1 ^ " := " ^ print_term e2
+  | Unit -> "()"
+  | Address n -> "address " ^ (string_of_int n)
 ;;
 
 
@@ -81,6 +114,10 @@ let rec substitution (x : string) (arg : pterm) (replace_in : pterm) : pterm =
   | Head lst -> Head (substitution x arg lst)
   | Tail lst -> Tail (substitution x arg lst)
   | Cons (head, tail) -> Cons (substitution x arg head, substitution x arg tail)
+  | Ref e -> Ref (substitution x arg e)
+  | Deref e -> Deref (substitution x arg e)
+  | Assign (e1, e2) -> Assign (substitution x arg e1, substitution x arg e2)
+  | Unit -> Unit
   | _ -> replace_in
 ;;
 
@@ -112,6 +149,11 @@ let rec alphaconv (t : pterm) : pterm = match t with
   | Head lst -> Head (alphaconv lst)
   | Tail lst -> Tail (alphaconv lst)
   | Cons (head, tail) -> Cons (alphaconv head, alphaconv tail)
+  (* partie 5 *)
+  | Unit -> t 
+  | Ref e -> Ref(alphaconv e)  
+  | Deref e -> Deref(alphaconv e)  
+  | Assign (e1,e2) -> Assign(alphaconv e1,alphaconv e2)  
   | _ -> t
   
   and alphaconv_list (lst : pterm liste ): pterm liste = 
@@ -125,91 +167,153 @@ let rec alphaconv (t : pterm) : pterm = match t with
   aux lst
 ;; 
 
-
-let rec ltr_ctb_step (t : pterm) : pterm option =
+let rec is_value t =
   match t with
-  (* | Abs (x, body) -> (match ltr_ctb_step body with
-    | Some new_body -> Some (Abs (x, new_body))
-    | None -> None) *)
-  | App (Abs (x, t1), n) -> 
-    (match ltr_ctb_step n with
-      | Some n' -> Some (substitution x n' t1)
-      | None -> Some (substitution x n t1))
+  | Int _ | Unit | Abs _ | Address _ -> true
+  | List l -> is_value_list l
+  | _ -> false
+
+and is_value_list l =
+  match l with
+  | Vide -> true
+  | Cons (head, tail) -> is_value head && is_value_list tail
+
+
+let rec ltr_ctb_step (t : pterm) (mem : memory) : (pterm * memory) option =
+  match t with
+  (* Réduction des applications *)
+  | App (Abs (x, t1), n) ->
+    (match ltr_ctb_step n mem with
+     | Some (n', mem') -> Some (substitution x n' t1, mem')
+     | None -> Some (substitution x n t1, mem))
   | App (m, n) ->
-    (match ltr_ctb_step m with
-      | Some m' -> Some (App (m', n))
-      | None -> 
-        (match ltr_ctb_step n with
-          | Some n' -> Some (App (m, n'))
-          | None -> None))
-  |Let (var,e1,e2) ->(match (ltr_ctb_step e1) with
-    | Some v -> let subbed_e2 = substitution var v e2 in  Some subbed_e2
-    | None ->  let subbed_e2 = substitution var e1 e2 in  Some subbed_e2)
-  | Pfix (t) -> (match t with
-      | Abs(phi,m) ->let subbed = substitution phi (Pfix(t)) m in Some subbed 
-      | _ -> None )
-  | IfZero (Int(0),cons,alt) -> Some(cons) 
-  | IfZero (Int(n),cons,alt) -> Some(alt) 
-  | IfZero (cond,cons,alt) -> (match ltr_ctb_step cond with 
-    | Some cond' -> Some (IfZero (cond',cons,alt)  ) 
-    | None -> failwith "If condition should be an integer " 
-    )
-  | IfEmpty (lst, t1, t2) -> 
-    (match lst with
-      | List(Vide) -> Some t1
-      | List(Cons(z,y)) -> Some t2
-      | _ -> None) 
-  
-  | Add(t1,t2) -> (match ltr_ctb_step t1 with
-    | Some(t1')-> Some(Add(t1',t2))
-    | None -> (match ltr_ctb_step t2 with 
-      | Some(t2') -> Some(Add(t1,t2'))
-      | None -> (match(t1,t2) with 
-        |(Int(x),Int(y)) -> Some(Int(x+y))
-        |_ -> None)))
-  | Sub(t1,t2) -> (match ltr_ctb_step t1 with
-    | Some(t1')-> Some(Sub(t1',t2))
-    | None -> (match ltr_ctb_step t2 with 
-      | Some(t2') -> Some(Sub(t1,t2'))
-      | None -> (match(t1,t2) with 
-        |(Int(x),Int(y)) -> Some(Int(x-y))
-        |_ -> None)))
+    (match ltr_ctb_step m mem with
+     | Some (m', mem') -> Some (App (m', n), mem')
+     | None ->
+       (match ltr_ctb_step n mem with
+        | Some (n', mem') -> Some (App (m, n'), mem')
+        | None -> None))
 
-  | Mul(t1,t2) -> (match ltr_ctb_step t1 with
-    | Some(t1')-> Some(Mul(t1',t2))
-    | None -> (match ltr_ctb_step t2 with 
-      | Some(t2') -> Some(Mul(t1,t2'))
-      | None -> (match(t1,t2) with 
-        |(Int(x),Int(y)) -> Some(Int(x*y))
-        |_ -> None)))
-  
-  | Head (List (Cons (x, _))) -> Some x
-  | Head (List Vide) -> None
-  | Head _ -> None
+  (* Réduction du Let *)
+  | Let (var, e1, e2) ->
+    (match ltr_ctb_step e1 mem with
+     | Some (v, mem') when is_value v ->
+       let subbed_e2 = substitution var v e2 in
+       Some (subbed_e2, mem')
+     | Some (e1', mem') -> Some (Let (var, e1', e2), mem')
+     | None -> None)
 
-  | Tail (List (Cons (_, xs))) -> Some (List xs)
-  | Tail (List Vide) -> failwith "liste vide"
-  | Tail lst -> 
-    (match ltr_ctb_step lst with 
-     | Some List (Cons (_, xs)) -> Some (List xs)
-     | Some List Vide -> None
+  (* Réduction des opérations arithmétiques *)
+  | Add (Int x, Int y) -> Some (Int (x + y), mem)
+  | Add (t1, t2) ->
+    (match ltr_ctb_step t1 mem with
+     | Some (t1', mem') -> Some (Add (t1', t2), mem')
+     | None ->
+       (match ltr_ctb_step t2 mem with
+        | Some (t2', mem') -> Some (Add (t1, t2'), mem')
+        | None -> None))
+
+  | Sub (Int x, Int y) -> Some (Int (x - y), mem)
+  | Sub (t1, t2) ->
+    (match ltr_ctb_step t1 mem with
+     | Some (t1', mem') -> Some (Sub (t1', t2), mem')
+     | None ->
+       (match ltr_ctb_step t2 mem with
+        | Some (t2', mem') -> Some (Sub (t1, t2'), mem')
+        | None -> None))
+
+  | Mul (Int x, Int y) -> Some (Int (x * y), mem)
+  | Mul (t1, t2) ->
+    (match ltr_ctb_step t1 mem with
+     | Some (t1', mem') -> Some (Mul (t1', t2), mem')
+     | None ->
+       (match ltr_ctb_step t2 mem with
+        | Some (t2', mem') -> Some (Mul (t1, t2'), mem')
+        | None -> None))
+
+  (* Réduction des opérations sur les listes *)
+  | Head (List (Cons (x, _))) -> Some (x, mem)
+  | Head (List Vide) -> failwith "Head of empty list"
+  | Head lst ->
+    (match ltr_ctb_step lst mem with
+     | Some (List (Cons (x, _)), mem') -> Some (x, mem')
      | _ -> None)
 
+  | Tail (List (Cons (_, xs))) -> Some (List xs, mem)
+  | Tail (List Vide) -> failwith "Tail of empty list"
+  | Tail lst ->
+    (match ltr_ctb_step lst mem with
+     | Some (List (Cons (_, xs)), mem') -> Some (List xs, mem')
+     | _ -> None)
+
+  (* Réduction des expressions conditionnelles *)
+  | IfZero (Int 0, t1, _) -> Some (t1, mem)
+  | IfZero (Int _, _, t2) -> Some (t2, mem)
+  | IfZero (cond, t1, t2) ->
+    (match ltr_ctb_step cond mem with
+     | Some (Int 0, mem') -> Some (t1, mem')
+     | Some (Int _, mem') -> Some (t2, mem')
+     | _ -> None)
+
+  | IfEmpty (List Vide, t1, _) -> Some (t1, mem)
+  | IfEmpty (List (Cons _), _, t2) -> Some (t2, mem)
+  | IfEmpty (cond, t1, t2) ->
+    (match ltr_ctb_step cond mem with
+     | Some (List Vide, mem') -> Some (t1, mem')
+     | Some (List (Cons _), mem') -> Some (t2, mem')
+     | _ -> None)
+
+  (* Réduction de Pfix *)
+  | Pfix t ->
+    (match t with
+     | Abs (f, body) ->
+       let t' = substitution f (Pfix t) body in
+       Some (t', mem)
+     | _ -> failwith "Pfix doit être appliqué à une abstraction")
+
+  | Ref v when is_value v ->
+    let addr = new_mem () in
+    Some (Address addr, (addr, v) :: mem)
+  | Ref t ->
+      (match ltr_ctb_step t mem with
+       | Some (v, mem') when is_value v -> 
+           let addr = new_mem () in
+           Some (Address addr, (addr, v) :: mem')
+       | Some (t', mem') -> Some (Ref t', mem')
+       | None -> None)
+  | Assign (Address a, v) when is_value v ->
+      Some (Unit, (a, v) :: List.remove_assoc a mem)
+  | Assign (t1, t2) ->
+      (match ltr_ctb_step t1 mem with
+       | Some (t1', mem') -> Some (Assign (t1', t2), mem')
+       | None when is_value t1 ->
+           (match ltr_ctb_step t2 mem with
+            | Some (t2', mem') -> Some (Assign (t1, t2'), mem')
+            | None -> None)
+       | None -> None)
+  | Deref (Address a) -> 
+      (try Some (List.assoc a mem, mem)
+       with Not_found -> failwith ("Invalid address: " ^ string_of_int a))
+  | Deref t ->
+      (match ltr_ctb_step t mem with
+       | Some (t', mem') -> Some (Deref t', mem')
+       | None -> None)
+     
   |_ -> None
 ;;
 
-let rec ltr_cbv_norm (t : pterm) : pterm =
-  match ltr_ctb_step t with
-  | Some res -> ltr_cbv_norm res  
-  | None -> t 
+
+let rec ltr_cbv_norm (t : pterm) (mem : memory) : (pterm * memory) =
+  match ltr_ctb_step t mem with
+  | Some (res, mem') -> ltr_cbv_norm res mem'
+  | None -> (t, mem)
 ;;
 
-
-
-let rec ltr_cbv_norm_with_limit (t : pterm) (limit : int) : pterm option =
+let rec ltr_cbv_norm_with_limit (t : pterm) (mem : memory) (limit : int) : (pterm * memory) option =
   if limit = 0 then None
   else
-    match ltr_ctb_step t with
-    | Some res -> ltr_cbv_norm_with_limit res (limit - 1)
-    | None -> Some t
+    match ltr_ctb_step t mem with
+    | Some (res, mem') -> ltr_cbv_norm_with_limit res mem' (limit - 1)
+    | None -> Some (t, mem)
 ;;
+

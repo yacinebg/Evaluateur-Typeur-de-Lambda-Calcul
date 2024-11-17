@@ -70,10 +70,9 @@ let test_typage_let_simple () =
 
 (* Test pour le typage d'une expression Let avec polymorphisme *)
 let test_typage_let_polymorphisme () =
-  let env = [] in
   let term = Let ("id", Abs ("x", Var "x"), App (Var "id", Var "y")) in
-  let env_with_y = [("y", TVar "B")] in
-  match inferer_type term env_with_y 100 with
+  let env = [("y", TVar "B")] in
+  match inferer_type term env 100 with
   | Some t -> print_endline ("Type inféré pour Let polymorphisme : " ^ print_type t)
   | None -> print_endline "Erreur de typage pour Let polymorphisme"
 ;;
@@ -115,18 +114,21 @@ let test_typage_forall () =
   | None -> print_endline "Erreur de typage pour la fonction identité polymorphe"
 ;;
 
-let test_typage_ifzero_polymorphe () =
+let test_typage_ifzero_simple () =
   let env = [] in
-  (* Fonction identité polymorphe utilisant un branchement *)
-  let term = Let ("id",
-                  Abs ("x", IfZero (Var "x", Int 0, Var "x")),
-                  App (Var "id", Var "y")) in
-  let env_with_y = [("y", TVar "T")] in
-  match inferer_type term env_with_y 100 with
-  | Some t -> print_endline ("Type inféré pour IfZero polymorphe : " ^ print_type t)
-  | None -> print_endline "Erreur de typage pour IfZero polymorphe"
+  let term = IfZero (Int 1, Int 1, Int 2) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour IfZero simple : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour IfZero simple"
 ;;
 
+let test_typage_ifzero_expression () =
+  let env = [] in
+  let term = IfZero (Add (Int 5, Int (-5)), Int 42, Add (Int 2, Int 3)) in
+  match inferer_type term env 100 with
+  | Some t -> print_endline ("Type inféré pour IfZero avec expressions : " ^ print_type t)
+  | None -> print_endline "Erreur de typage pour IfZero avec expressions"
+;;
 
 let () = 
 test_typage_variable ();
@@ -140,4 +142,5 @@ test_typage_variable ();
   test_typage_pfix ();
   test_typage_liste_vide ();
   test_typage_forall();
-  test_typage_ifzero_polymorphe();
+  test_typage_ifzero_simple();
+  test_typage_ifzero_expression()

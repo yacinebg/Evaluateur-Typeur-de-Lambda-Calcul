@@ -4,23 +4,24 @@ open Ast
 type ptype = 
   | TVar of string
   | Arr of ptype * ptype
-  | N of int
+  | N
   | TList of ptype   
   | Forall of string list * ptype 
 ;;
+
 
 (* print des types *)
 let rec print_type (t : ptype) : string = 
   match t with
   | TVar x -> x
-  | Arr (t1,t2) -> "("^ (print_type t1)^" -> "^ (print_type t2) ^")"
-  | N x -> "N(" ^ string_of_int x ^ ")"
+  | Arr (t1, t2) -> "(" ^ (print_type t1) ^ " -> " ^ (print_type t2) ^ ")"
+  | N -> "N"
   | TList t -> "[" ^ (print_type t) ^ "]"
   | Forall (vars, t) ->
     let vars_str = String.concat ", " vars in
     "∀" ^ vars_str ^ ". " ^ (print_type t)
 ;;
-;;
+
 
 
 let compteur_var_t : int ref = ref 0
@@ -80,17 +81,18 @@ let rec genere_equa (te : pterm) (ty : ptype) (e : env) : equa =
       let eq_droite = genere_equa t2 ta e in
       eq_gauche @ eq_droite
   (* Question 4.2 *)
-  | Int x -> [(ty, N x)]
+  | Int _ -> [(ty, N)]
   | Add (x, y) | Sub (x, y) | Mul (x, y) ->
-    let eq_gauche = genere_equa x (N 0) e in
-    let eq_droite = genere_equa y (N 0) e in
-    [(ty, N 0)] @ eq_gauche @ eq_droite
+    let eq_gauche = genere_equa x N e in
+    let eq_droite = genere_equa y N e in
+    [(ty, N)] @ eq_gauche @ eq_droite
   
   | IfZero (cond, t1, t2) -> 
-    let tc = genere_equa cond (N 0) e in
+    let tc = genere_equa cond N e in
     let eq_t1 = genere_equa t1 ty e in
     let eq_t2 = genere_equa t2 ty e in
     tc @ eq_t1 @ eq_t2
+  
   | IfEmpty (cond, t1, t2) ->
     let ta = TVar (nouvelle_var_t()) in
     let eq_cond = genere_equa cond (TList ta) e in
@@ -166,14 +168,14 @@ and occur_check (v:string) (ty:ptype) : bool =
   | Forall (vars, t) ->
       if List.mem v vars then false
       else occur_check v t
-  | N _ -> false
+  | N -> false
   | _ -> false
 
 
 and substitue (v:string) (replace_with : ptype) (t:ptype) : ptype=
   match t with 
   |TVar x -> if x = v then replace_with else t 
-  | N x -> N x
+  | N-> N
   |Arr(t1,t2) -> Arr((substitue v replace_with t1),(substitue v replace_with t2))
   | TList t' -> TList (substitue v replace_with t')
   | Forall (vars, t') ->
@@ -202,7 +204,7 @@ and unification (equations : equa) (subs : equa) : equa =
       if t1 = t2 then unification rest subs
       else 
         match (t1, t2) with
-        | N x, N y -> unification rest subs
+        | N, N -> unification rest subs
         | TVar x, _ -> 
             if not (occur_check x t2) then 
               let new_subs = (TVar x, t2) :: subs in 
