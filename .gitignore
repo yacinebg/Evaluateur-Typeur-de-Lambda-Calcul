@@ -1,0 +1,20 @@
+# Fichiers OCaml compilés
+*.cmo
+*.cmi
+*.cmx
+*.o
+
+# Fichiers d'interface générés par ocamlyacc
+parser.mli
+
+# Fichiers générés par ocamllex et ocamlyacc
+lexer.ml
+parser.ml
+
+# Fichiers exécutables
+test
+test_typage
+
+# Fichiers de sauvegarde temporaires
+*~
+
