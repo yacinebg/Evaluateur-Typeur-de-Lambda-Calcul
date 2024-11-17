@@ -6,7 +6,7 @@
 
 # Fichiers d'interface générés par ocamlyacc
 parser.mli
-
+ast
 # Fichiers générés par ocamllex et ocamlyacc
 lexer.ml
 parser.ml
